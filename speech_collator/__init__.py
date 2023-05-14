@@ -172,7 +172,7 @@ class SpeechCollator():
             mel = self.mel_spectrogram(torch.tensor(batch[i]["audio"]).unsqueeze(0))
             mel = torch.sqrt(mel[0])
             mel = torch.matmul(self.mel_basis, mel)
-            mel = Collator.drc(mel)
+            mel = SpeechCollator.drc(mel)
 
             batch[i]["mel"] = mel.T
             if batch[i]["mel"].shape[0] > new_mel_len:
