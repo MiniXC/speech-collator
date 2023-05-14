@@ -1,0 +1,16 @@
+
+[project]
+name = "speech-collator"
+version = "0.1.0"
+description = "A collator for speech datasets with different batching strategies and attribute extraction."
+authors = [
+    {name = "Christoph Minixhofer", email = "christoph.minixhofer@gmail.com"},
+]
+dependencies = []
+requires-python = ">=3.8"
+readme = "README.md"
+license = {text = "MIT"}
+
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
