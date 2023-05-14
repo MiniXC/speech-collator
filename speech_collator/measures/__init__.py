@@ -4,7 +4,6 @@ import os
 import numpy as np
 import pyworld as pw
 import librosa
-import torch
 from scipy import interpolate
 
 from .snr import wada_snr
@@ -133,3 +132,4 @@ class SNRMeasure(Measure):
     def compute(self, audio, durations, silence_mask=None):
         snr, snr_t = wada_snr(audio)
         return snr_t
+    

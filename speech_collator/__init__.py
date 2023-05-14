@@ -13,6 +13,7 @@ import torchaudio.transforms as AT
 from librosa.filters import mel as librosa_mel
 from time import time
 import pandas as pd
+from tqdm.auto import tqdm
 pd.options.mode.chained_assignment=None
 
 class JitWrapper():
@@ -101,6 +102,7 @@ class SpeechCollator():
         self.include_audio = include_audio
         self.overwrite_max_length = overwrite_max_length
         self.audio_args = audio_args
+        self.pad_value = self.phone2idx["<pad>"]
         if return_keys is None:
             self.return_keys = [
                 "audio",
@@ -157,7 +159,7 @@ class SpeechCollator():
             duration_permutation = np.argsort(durations+np.random.normal(0, durations.std(), len(durations)))
             duration_mask_rm = durations[duration_permutation].cumsum() >= self.max_frame_length
             duration_mask_rm = duration_mask_rm[np.argsort(duration_permutation)]
-            batch[i]["phones"][duration_mask_rm] = self.phone2idx["MASK"]
+            batch[i]["phones"][duration_mask_rm] = self.phone2idx["<mask>"]
             duration_mask_rm_exp = np.repeat(duration_mask_rm, durations * self.audio_args["hop_length"])
             dur_sum = sum(durations)
             self.num_total += 1
@@ -266,15 +268,15 @@ class SpeechCollator():
                 result["dvector"] = torch.stack(result["dvector"])
                 torch.cuda.empty_cache()
         if "audio" in self.return_keys:
-            result["audio"] = pad_sequence([x["audio"] for x in batch], batch_first=True)
+            result["audio"] = pad_sequence([x["audio"] for x in batch], batch_first=True, padding_value=self.pad_value)
         if "mel" in self.return_keys:
-            result["mel"] = pad_sequence([x["mel"] for x in batch], batch_first=True)
+            result["mel"] = pad_sequence([x["mel"] for x in batch], batch_first=True, padding_value=self.pad_value)
         if "phone_durations" in self.return_keys:
-            result["phone_durations"] = pad_sequence([x["phone_durations"] for x in batch], batch_first=True)
+            result["phone_durations"] = pad_sequence([x["phone_durations"] for x in batch], batch_first=True, padding_value=self.pad_value)
         if "durations" in self.return_keys:
-            result["durations"] = pad_sequence([x["durations"] for x in batch], batch_first=True)
+            result["durations"] = pad_sequence([x["durations"] for x in batch], batch_first=True, padding_value=self.pad_value)
         if "phones" in self.return_keys:
-            result["phones"] = pad_sequence([x["phones"] for x in batch], batch_first=True)
+            result["phones"] = pad_sequence([x["phones"] for x in batch], batch_first=True, padding_value=self.pad_value)
         if "speaker" in self.return_keys:
             speakers = [str(x["speaker"]).split("/")[-1] if ("/" in str(x["speaker"])) else x["speaker"] for x in batch]
             # speaker2idx
@@ -291,7 +293,7 @@ class SpeechCollator():
         if self.measures is not None and "measures" in self.return_keys:
             result["measures"] = {}
             for measure in self.measures:
-                result["measures"][measure.name] = pad_sequence([x["measures"][measure.name] for x in batch], batch_first=True)
+                result["measures"][measure.name] = pad_sequence([x["measures"][measure.name] for x in batch], batch_first=True, padding_value=self.pad_value)
         elif "measures" in self.return_keys:
             result["measures"] = None
 
@@ -300,3 +302,23 @@ class SpeechCollator():
         }
 
         return result
+
+def create_speaker2idx(dataset, additonal_tokens=["<unk>"]):
+    speaker2idx = {
+        k: v for k, v in zip(additonal_tokens, range(len(additonal_tokens)))
+    }
+    for row in tqdm(dataset):
+        if row["speaker"] not in speaker2idx:
+            speaker2idx[row["speaker"]] = len(speaker2idx)
+    return speaker2idx
+
+def create_phone2idx(dataset, additonal_tokens=["<pad>", "<mask>", "<unk>"]):
+    phone2idx = {
+        k: v for k, v in zip(additonal_tokens, range(len(additonal_tokens)))
+    }
+    for row in tqdm(dataset):
+        for phone in row["phones"]:
+            if phone not in phone2idx:
+                phone2idx[phone] = len(phone2idx)
+    return phone2idx
+    
