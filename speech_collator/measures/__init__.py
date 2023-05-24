@@ -71,8 +71,42 @@ class PitchMeasure(Measure):
             pitch = pitch[:sum(durations)]
         if silence_mask is not None:
             pitch[silence_mask] = np.nan
-        if np.isnan(pitch).all():
-            pitch[:] = 1e-6
+        pitch[pitch < 1e-6] = np.nan
+        # if np.isnan(pitch).all():
+        #     pitch[:] = 1e-6
+        return pitch
+
+class VoiceActivityMeasure(Measure):
+    def __init__(
+        self,
+        name="voice_activity",
+        description="Voice activity measure",
+        sampling_rate=22050,
+        win_length=1024,
+        hop_length=256,
+        pitch_quality=1
+    ):
+        global pw
+        super().__init__(name, description)
+        self.sampling_rate = sampling_rate
+        self.hop_length = hop_length
+        self.dio_speed = int(np.round(1 / pitch_quality))
+
+    def compute(self, audio, durations, silence_mask=None):
+        f0, t = pw.dio(
+            audio.astype(np.float64),
+            self.sampling_rate,
+            frame_period=self.hop_length / self.sampling_rate * 1000,
+            speed=self.dio_speed,
+        )
+        pitch = pw.stonemask(audio.astype(np.float64), f0, t, self.sampling_rate).astype(np.float32)
+        if sum(durations) < len(pitch):
+            pitch = pitch[:sum(durations)]
+        if silence_mask is not None:
+            pitch[silence_mask] = np.nan
+        pitch[pitch < 1e-6] = np.nan
+        pitch[~np.isnan(pitch)] = 1
+        pitch[np.isnan(pitch)] = 0
         return pitch
 
 class EnergyMeasure(Measure):
