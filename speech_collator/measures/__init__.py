@@ -14,6 +14,8 @@ class Measure(ABC):
         self.name = name
         self.description = description
         self.is_binary = is_binary
+        if self.is_binary:
+            self.name += "_binary"
 
     @staticmethod
     def interpolate(x):
