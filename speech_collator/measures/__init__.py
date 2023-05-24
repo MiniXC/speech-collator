@@ -10,9 +10,10 @@ from .snr import wada_snr
 from .srmr import srmr
 
 class Measure(ABC):
-    def __init__(self, name, description):
+    def __init__(self, name, description, is_binary=False):
         self.name = name
         self.description = description
+        self.is_binary = is_binary
 
     @staticmethod
     def interpolate(x):
@@ -87,7 +88,7 @@ class VoiceActivityMeasure(Measure):
         pitch_quality=1
     ):
         global pw
-        super().__init__(name, description)
+        super().__init__(name, description, is_binary=True)
         self.sampling_rate = sampling_rate
         self.hop_length = hop_length
         self.dio_speed = int(np.round(1 / pitch_quality))
