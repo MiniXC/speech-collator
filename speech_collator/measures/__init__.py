@@ -72,8 +72,8 @@ class PitchMeasure(Measure):
         if silence_mask is not None:
             pitch[silence_mask] = np.nan
         pitch[pitch < 1e-6] = np.nan
-        # if np.isnan(pitch).all():
-        #     pitch[:] = 1e-6
+        if np.isnan(pitch).all():
+            pitch[:] = 1e-6
         return pitch
 
 class VoiceActivityMeasure(Measure):
