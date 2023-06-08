@@ -5,6 +5,9 @@ import numpy as np
 import pyworld as pw
 import librosa
 from scipy import interpolate
+import penn
+import torch
+from scipy.interpolate import interp1d
 
 from .snr import wada_snr
 from .srmr import srmr
@@ -170,3 +173,78 @@ class SNRMeasure(Measure):
         snr, snr_t = wada_snr(audio)
         return snr_t
     
+class PennPitchMeasure(Measure):
+    def __init__(
+        self,
+        name="penn_pitch",
+        description="Penn Pitch measure",
+        sampling_rate=22050,
+        hop_length=256,
+        fmin=0.,
+        fmax=8000.,
+    ):
+        super().__init__(name, description)
+        self.hop_length = hop_length
+        self.sampling_rate = sampling_rate
+        self.fmin = fmin
+        self.fmax = fmax
+    
+    def compute(self, audio, durations, silence_mask=None):
+        if self.sampling_rate != 16000:
+            audio = librosa.resample(audio, self.sampling_rate, 16000)
+        audio = torch.tensor(audio).unsqueeze(0)
+        checkpoint = penn.DEFAULT_CHECKPOINT
+        pad = True
+        interp_unvoiced_at = .065
+        pitch, periodicity = penn.from_audio(
+            audio,
+            penn.SAMPLE_RATE,
+            hopsize=.01,
+            fmin=30.,
+            fmax=1000.,
+            checkpoint=checkpoint,
+            batch_size=1,
+            pad=pad,
+            interp_unvoiced_at=interp_unvoiced_at)
+        pitch = pitch[0].numpy()
+        # resample to sum(durations)
+        pitch = librosa.resample(pitch, orig_sr=len(pitch), target_sr=sum(durations))
+        return pitch
+
+class PennPeriodicityMeasure(Measure):
+    def __init__(
+        self,
+        name="penn_periodicity",
+        description="Penn Periodicity measure",
+        sampling_rate=22050,
+        hop_length=256,
+        fmin=0.,
+        fmax=8000.,
+    ):
+        super().__init__(name, description)
+        self.hop_length = hop_length
+        self.sampling_rate = sampling_rate
+        self.fmin = fmin
+        self.fmax = fmax
+    
+    def compute(self, audio, durations, silence_mask=None):
+        if self.sampling_rate != 16000:
+            audio = librosa.resample(audio, self.sampling_rate, 16000)
+        audio = torch.tensor(audio).unsqueeze(0)
+        checkpoint = penn.DEFAULT_CHECKPOINT
+        pad = True
+        interp_unvoiced_at = .065
+        pitch, periodicity = penn.from_audio(
+            audio,
+            penn.SAMPLE_RATE,
+            hopsize=.01,
+            fmin=30.,
+            fmax=1000.,
+            checkpoint=checkpoint,
+            batch_size=1,
+            pad=pad,
+            interp_unvoiced_at=interp_unvoiced_at)
+        periodicity = periodicity[0].numpy()
+        # resample to sum(durations)
+        periodicity = librosa.resample(periodicity, orig_sr=len(periodicity), target_sr=sum(durations))
+        return periodicity

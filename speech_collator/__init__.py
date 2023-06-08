@@ -104,13 +104,23 @@ class SpeechCollator():
         self.audio_args = audio_args
         self.pad_value = self.phone2idx["<pad>"]
         if return_keys is None:
-            self.return_keys = [
-                "audio",
-                "mel",
-                "phone_durations",
-                "phones",
-                "speaker",
-            ]
+            if self.measures is not None:
+                self.return_keys = [
+                    "audio",
+                    "mel",
+                    "phone_durations",
+                    "phones",
+                    "speaker",
+                    "measures",
+                ]
+            else:
+                self.return_keys = [
+                    "audio",
+                    "mel",
+                    "phone_durations",
+                    "phones",
+                    "speaker",
+                ]
         else:
             self.return_keys = return_keys
 

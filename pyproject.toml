@@ -12,7 +12,7 @@ dependencies = [
     "librosa<0.10",
     "scipy>=1.9.3",
 ]
-requires-python = ">=3.8"
+requires-python = ">=3.6"
 readme = "README.md"
 license = {text = "MIT"}
 
