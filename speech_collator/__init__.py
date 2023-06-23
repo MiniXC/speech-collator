@@ -54,6 +54,8 @@ class SpeechCollator():
             "n_mels": 80,
         },
         return_keys=None,
+        wave_augmentation_func=None,
+        mel_augmentation_func=None,
     ):
         # download dvector and wav2mel
         local_data_dir = f"{_DATA_DIR}/data"
@@ -124,6 +126,9 @@ class SpeechCollator():
         else:
             self.return_keys = return_keys
 
+        self.wave_augmentation_func = wave_augmentation_func
+        self.mel_augmentation_func = mel_augmentation_func
+
     @staticmethod
     def drc(x, C=1, clip_val=1e-7):
         return torch.log(torch.clamp(x, min=clip_val) * C)
@@ -157,14 +162,23 @@ class SpeechCollator():
             audio = audio[0].numpy()
             audio = audio[start:end]
             audio = audio / np.abs(audio).max()
+            if self.wave_augmentation_func is not None:
+                augmented_audio = audio.copy()
+                augmented_audio = self.wave_augmentation_func(augmented_audio)
+            else:
+                augmented_audio = None
 
             durations = np.array(row["phone_durations"])
 
             max_audio_len = int(durations.sum() * self.audio_args["hop_length"])
             if len(audio) < max_audio_len:
                 audio = np.pad(audio, (0, max_audio_len - len(audio)))
+                if augmented_audio is not None:
+                    augmented_audio = np.pad(augmented_audio, (0, max_audio_len - len(augmented_audio)))
             elif len(audio) > max_audio_len:
                 audio = audio[:max_audio_len]
+                if augmented_audio is not None:
+                    augmented_audio = augmented_audio[:max_audio_len]
             
             duration_permutation = np.argsort(durations+np.random.normal(0, durations.std(), len(durations)))
             duration_mask_rm = durations[duration_permutation].cumsum() >= self.max_frame_length
@@ -177,6 +191,8 @@ class SpeechCollator():
             self.percentage_mask_tokens += sum(duration_mask_rm_exp) / len(duration_mask_rm_exp)
             durations[duration_mask_rm] = 0
             batch[i]["audio"] = audio[~duration_mask_rm_exp]
+            if augmented_audio is not None:
+                batch[i]["augmented_audio"] = augmented_audio[~duration_mask_rm_exp]
             new_mel_len = int(np.ceil(len(batch[i]["audio"]) / self.audio_args["hop_length"]))
             # compute mel spectrogram
             mel = self.mel_spectrogram(torch.tensor(batch[i]["audio"]).unsqueeze(0))
@@ -184,11 +200,25 @@ class SpeechCollator():
             mel = torch.matmul(self.mel_basis, mel)
             mel = SpeechCollator.drc(mel)
 
+            if augmented_audio is not None:
+                augmented_mel = self.mel_spectrogram(torch.tensor(batch[i]["augmented_audio"]).unsqueeze(0))
+                augmented_mel = torch.sqrt(augmented_mel[0])
+                augmented_mel = torch.matmul(self.mel_basis, augmented_mel)
+                augmented_mel = SpeechCollator.drc(augmented_mel)
+            else:
+                augmented_mel = None
+
             batch[i]["mel"] = mel.T
+            if augmented_mel is not None:
+                batch[i]["augmented_mel"] = augmented_mel.T
             if batch[i]["mel"].shape[0] > new_mel_len:
                 batch[i]["mel"] = batch[i]["mel"][:new_mel_len]
+                if augmented_mel is not None:
+                    batch[i]["augmented_mel"] = batch[i]["augmented_mel"][:new_mel_len]
             if batch[i]["mel"].shape[0] < new_mel_len:
                 batch[i]["mel"] = torch.cat([batch[i]["mel"], torch.zeros(1, batch[i]["mel"].shape[1])])
+                if augmented_mel is not None:
+                    batch[i]["augmented_mel"] = torch.cat([batch[i]["augmented_mel"], torch.zeros(1, batch[i]["augmented_mel"].shape[1])])
             
             unexpanded_silence_mask = ["[" in p for p in phones]
             silence_mask = self._expand(unexpanded_silence_mask, durations)
@@ -234,10 +264,18 @@ class SpeechCollator():
             batch[0]["audio"] = ConstantPad1d(
                 (0, max_audio_length - len(batch[0]["audio"])), 0
             )(torch.tensor(batch[0]["audio"]))
+        if "augmented_audio" in self.return_keys:
+            batch[0]["augmented_audio"] = ConstantPad1d(
+                (0, max_audio_length - len(batch[0]["augmented_audio"])), 0
+            )(torch.tensor(batch[0]["augmented_audio"]))
         if "mel" in self.return_keys:
             batch[0]["mel"] = ConstantPad2d(
                 (0, 0, 0, max_frame_length - batch[0]["mel"].shape[0]), 0
             )(batch[0]["mel"])
+        if "augmented_mel" in self.return_keys:
+            batch[0]["augmented_mel"] = ConstantPad2d(
+                (0, 0, 0, max_frame_length - batch[0]["augmented_mel"].shape[0]), 0
+            )(batch[0]["augmented_mel"])
         if "phone_durations" in self.return_keys:
             batch[0]["phone_durations"] = ConstantPad1d(
                 (0, max_phone_length - len(batch[0]["phone_durations"])), 0
@@ -257,6 +295,8 @@ class SpeechCollator():
         for i in range(1, len(batch)):
             if "audio" in self.return_keys or "dvector" in self.return_keys:
                 batch[i]["audio"] = torch.tensor(batch[i]["audio"])
+            if "augmented_audio" in self.return_keys:
+                batch[i]["augmented_audio"] = torch.tensor(batch[i]["augmented_audio"])
             if "phone_durations" in self.return_keys:
                 batch[i]["phone_durations"] = torch.tensor(batch[i]["phone_durations"])
             if "durations" in self.return_keys:
@@ -279,8 +319,12 @@ class SpeechCollator():
                 torch.cuda.empty_cache()
         if "audio" in self.return_keys:
             result["audio"] = pad_sequence([x["audio"] for x in batch], batch_first=True, padding_value=self.pad_value)
+        if "augmented_audio" in self.return_keys:
+            result["augmented_audio"] = pad_sequence([x["augmented_audio"] for x in batch], batch_first=True, padding_value=self.pad_value)
         if "mel" in self.return_keys:
             result["mel"] = pad_sequence([x["mel"] for x in batch], batch_first=True, padding_value=self.pad_value)
+        if "augmented_mel" in self.return_keys:
+            result["augmented_mel"] = pad_sequence([x["augmented_mel"] for x in batch], batch_first=True, padding_value=self.pad_value)
         if "phone_durations" in self.return_keys:
             result["phone_durations"] = pad_sequence([x["phone_durations"] for x in batch], batch_first=True, padding_value=self.pad_value)
         if "durations" in self.return_keys:
