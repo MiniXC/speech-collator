@@ -56,6 +56,9 @@ class SpeechCollator():
         return_keys=None,
         wave_augmentation_func=None,
         mel_augmentation_func=None,
+        use_speaker_prompt=False,
+        speaker_prompt_frames=256,
+        speaker_prompt_wave_augmentation_func=None,
     ):
         # download dvector and wav2mel
         local_data_dir = f"{_DATA_DIR}/data"
@@ -129,6 +132,10 @@ class SpeechCollator():
         self.wave_augmentation_func = wave_augmentation_func
         self.mel_augmentation_func = mel_augmentation_func
 
+        self.use_speaker_prompt = use_speaker_prompt
+        self.speaker_prompt_frames = speaker_prompt_frames
+        self.speaker_prompt_wave_augmentation_func = speaker_prompt_wave_augmentation_func
+
     @staticmethod
     def drc(x, C=1, clip_val=1e-7):
         return torch.log(torch.clamp(x, min=clip_val) * C)
@@ -146,6 +153,33 @@ class SpeechCollator():
     
     def collate_fn(self, batch):
         result = {}
+
+        # speaker prompt
+        if self.use_speaker_prompt:
+            prompts = [[x for x in row["audio_speaker_prompt"] if x != row["audio"]] for row in batch]
+            # random speaker prompt
+            prompts = [p[np.random.randint(0, len(p))] for p in prompts]
+            prompt_audios = [
+                torchaudio.load(p)[0][0].numpy() for p in prompts
+            ]
+            prompt_len = self.speaker_prompt_frames*self.audio_args["hop_length"]
+            # concat random segments of prompt audios
+            prompt_audio_arr = np.zeros(len(prompt_audios)*prompt_len)
+            for i, prompt_audio in enumerate(prompt_audios):
+                start = np.random.randint(0, len(prompt_audio)-prompt_len)
+                temp_audio = prompt_audio[start:start+prompt_len]
+                temp_audio = temp_audio / np.abs(temp_audio).max()
+                prompt_audio_arr[i*prompt_len:(i+1)*prompt_len] = temp_audio
+            
+            if self.speaker_prompt_wave_augmentation_func is not None:
+                prompt_audio_arr = self.speaker_prompt_wave_augmentation_func(prompt_audio_arr)
+
+            prompt_audio_arr = torch.tensor(prompt_audio_arr).reshape(len(prompt_audios), prompt_len)
+            prompt_mels = self.mel_spectrogram(prompt_audio_arr)
+            prompt_mels = torch.sqrt(prompt_mels)
+            prompt_mels = prompt_mels.to(torch.float32)
+            prompt_mels = torch.matmul(self.mel_basis, prompt_mels)
+            prompt_mels = SpeechCollator.drc(prompt_mels).transpose(1, 2)
 
         for i, row in enumerate(batch):
             phones = row["phones"]
@@ -354,6 +388,9 @@ class SpeechCollator():
         result = {
             k: v for k, v in result.items() if k in self.return_keys
         }
+
+        if self.use_speaker_prompt:
+            result["speaker_prompt_mel"] = prompt_mels
 
         return result
 
