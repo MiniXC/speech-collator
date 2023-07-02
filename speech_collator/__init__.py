@@ -166,10 +166,14 @@ class SpeechCollator():
             # concat random segments of prompt audios
             prompt_audio_arr = np.zeros(len(prompt_audios)*prompt_len)
             for i, prompt_audio in enumerate(prompt_audios):
-                start = np.random.randint(0, len(prompt_audio)-prompt_len)
+                if len(prompt_audio)-prompt_len > 0:
+                    start = np.random.randint(0, len(prompt_audio)-prompt_len)
+                else:
+                    start = 0
                 temp_audio = prompt_audio[start:start+prompt_len]
                 temp_audio = temp_audio / np.abs(temp_audio).max()
-                prompt_audio_arr[i*prompt_len:(i+1)*prompt_len] = temp_audio
+                audio_len = len(temp_audio)
+                prompt_audio_arr[i*prompt_len:i*prompt_len+audio_len] = temp_audio
             
             if self.speaker_prompt_wave_augmentation_func is not None:
                 prompt_audio_arr = self.speaker_prompt_wave_augmentation_func(prompt_audio_arr)
