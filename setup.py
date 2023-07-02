@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="speech-collator",
-    version="0.1.11",
+    version="0.1.12",
     description="A collator for speech datasets with different batching strategies and attribute extraction.",
     author="Christoph Minixhofer",
     author_email="christoph.minixhofer@gmail.com",
