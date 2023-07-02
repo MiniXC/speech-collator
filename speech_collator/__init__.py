@@ -133,7 +133,7 @@ class SpeechCollator():
         self.mel_augmentation_func = mel_augmentation_func
 
         self.use_speaker_prompt = use_speaker_prompt
-        self.speaker_prompt_frames = speaker_prompt_frames
+        self.speaker_prompt_frames = speaker_prompt_frames-1
         self.speaker_prompt_wave_augmentation_func = speaker_prompt_wave_augmentation_func
 
     @staticmethod
