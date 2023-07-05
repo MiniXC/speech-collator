@@ -273,29 +273,34 @@ class SpeechCollator():
             batch[i]["durations"] = durations
 
             if self.vocex_model is not None and "vocex" in self.return_keys:
-                with torch.no_grad():
-                    v_results = self.vocex_model(batch[i]["mel"].unsqueeze(0), inference=True)
-                    pitch = v_results["measures"]["pitch"][0]
-                    energy = v_results["measures"]["energy"][0]
-                    va = v_results["measures"]["voice_activity_binary"][0]
-                    pitch = (pitch - pitch.mean()) / pitch.std()
-                    energy = (energy - energy.mean()) / energy.std()
-                    va = (va - 0.5) * 2
-                    p_dur_gt0 = [d for d in batch[i]["phone_durations"] if d > 0]
-                    current_idx = 0
-                    vals_per_window = 5
-                    new_repr = np.zeros((len(p_dur_gt0), vals_per_window*3+1))
-                    for j, d in enumerate(p_dur_gt0):
-                        pitch_window = pitch[current_idx:current_idx+d]
-                        energy_window = energy[current_idx:current_idx+d]
-                        va_window = va[current_idx:current_idx+d]
-                        new_repr[j, 1:vals_per_window+1] = resample(pitch_window, vals_per_window)
-                        new_repr[j, vals_per_window+1:vals_per_window*2+1] = resample(energy_window, vals_per_window)
-                        new_repr[j, vals_per_window*2+1:vals_per_window*3+1] = resample(va_window, vals_per_window)
-                        current_idx += d
-                    new_repr[:, 0] = p_dur_gt0
-                    new_repr[:, 0] = np.log10(new_repr[:, 0] + 1)
-                    batch[i]["vocex"] = torch.tensor(new_repr).float()
+                vocex_cache_path = audio_path.replace(".wav", "_vocex.npy")
+                if os.path.exists(vocex_cache_path):
+                    batch[i]["vocex"] = torch.tensor(np.load(vocex_cache_path)).float()
+                else:
+                    with torch.no_grad():
+                        v_results = self.vocex_model(batch[i]["mel"].unsqueeze(0), inference=True)
+                        pitch = v_results["measures"]["pitch"][0]
+                        energy = v_results["measures"]["energy"][0]
+                        va = v_results["measures"]["voice_activity_binary"][0]
+                        pitch = (pitch - pitch.mean()) / pitch.std()
+                        energy = (energy - energy.mean()) / energy.std()
+                        va = (va - 0.5) * 2
+                        p_dur_gt0 = [d for d in batch[i]["phone_durations"] if d > 0]
+                        current_idx = 0
+                        vals_per_window = 5
+                        new_repr = np.zeros((len(p_dur_gt0), vals_per_window*3+1))
+                        for j, d in enumerate(p_dur_gt0):
+                            pitch_window = pitch[current_idx:current_idx+d]
+                            energy_window = energy[current_idx:current_idx+d]
+                            va_window = va[current_idx:current_idx+d]
+                            new_repr[j, 1:vals_per_window+1] = resample(pitch_window, vals_per_window)
+                            new_repr[j, vals_per_window+1:vals_per_window*2+1] = resample(energy_window, vals_per_window)
+                            new_repr[j, vals_per_window*2+1:vals_per_window*3+1] = resample(va_window, vals_per_window)
+                            current_idx += d
+                        new_repr[:, 0] = p_dur_gt0
+                        new_repr[:, 0] = np.log10(new_repr[:, 0] + 1)
+                        np.save(vocex_cache_path, new_repr)
+                        batch[i]["vocex"] = torch.tensor(new_repr).float()
 
             if self.measures is not None:
                 measure_paths = {
