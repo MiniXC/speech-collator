@@ -1,6 +1,6 @@
 [project]
 name = "speech-collator"
-version = "0.1.16"
+version = "0.1.17"
 description = "A collator for speech datasets with different batching strategies and attribute extraction."
 authors = [
     {name = "Christoph Minixhofer", email = "christoph.minixhofer@gmail.com"},

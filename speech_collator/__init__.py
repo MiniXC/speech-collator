@@ -63,6 +63,7 @@ class SpeechCollator():
         speaker_prompt_frames=256,
         speaker_prompt_wave_augmentation_func=None,
         vocex_model=None,
+        expand_seq=False,
     ):
         # download dvector and wav2mel
         local_data_dir = f"{_DATA_DIR}/data"
@@ -142,6 +143,8 @@ class SpeechCollator():
         self.speaker_prompt_wave_augmentation_func = speaker_prompt_wave_augmentation_func
 
         self.vocex_model = vocex_model
+
+        self.expand = expand_seq
 
     @staticmethod
     def drc(x, C=1, clip_val=1e-7):
@@ -285,11 +288,14 @@ class SpeechCollator():
                         pitch = (pitch - pitch.mean()) / pitch.std()
                         energy = (energy - energy.mean()) / energy.std()
                         va = (va - 0.5) * 2
-                        p_dur_gt0 = [d for d in batch[i]["phone_durations"] if d > 0]
+                        p_dur_gt0 = batch[i]["phone_durations"]
                         current_idx = 0
                         vals_per_window = 5
                         new_repr = np.zeros((len(p_dur_gt0), vals_per_window*3+1))
                         for j, d in enumerate(p_dur_gt0):
+                            if d == 0:
+                                new_repr[j, :] = 0
+                                continue
                             pitch_window = pitch[current_idx:current_idx+d]
                             energy_window = energy[current_idx:current_idx+d]
                             va_window = va[current_idx:current_idx+d]
@@ -301,6 +307,8 @@ class SpeechCollator():
                         new_repr[:, 0] = np.log10(new_repr[:, 0] + 1)
                         np.save(vocex_cache_path, new_repr)
                         batch[i]["vocex"] = torch.tensor(new_repr).float()
+                if self.expand:
+                    batch[i]["vocex"] = self._expand(batch[i]["vocex"], batch[i]["phone_durations"])
 
             if self.measures is not None:
                 measure_paths = {
@@ -339,9 +347,14 @@ class SpeechCollator():
             max_phone_length = max(self.max_phone_length, max_phone_length)
         max_audio_length = (max_frame_length * self.audio_args["hop_length"])
         if "vocex" in self.return_keys and self.vocex_model is not None:
-            batch[0]["vocex"] = ConstantPad2d(
-                (0, 0, 0, max_phone_length - batch[0]["vocex"].shape[0]), 0
-            )(batch[0]["vocex"])
+            if self.expand:
+                batch[0]["vocex"] = ConstantPad2d(
+                    (0, 0, 0, max_frame_length - batch[0]["vocex"].shape[0]), 0
+                )(batch[0]["vocex"])
+            else:
+                batch[0]["vocex"] = ConstantPad2d(
+                    (0, 0, 0, max_phone_length - batch[0]["vocex"].shape[0]), 0
+                )(batch[0]["vocex"])
         if "audio" in self.return_keys or "dvector" in self.return_keys:
             batch[0]["audio"] = ConstantPad1d(
                 (0, max_audio_length - len(batch[0]["audio"])), 0
@@ -366,9 +379,16 @@ class SpeechCollator():
             batch[0]["durations"] = ConstantPad1d(
                 (0, max_phone_length - len(batch[0]["durations"])), 0
             )(torch.tensor(batch[0]["durations"]))
-        if "phones" in self.return_keys:
-            batch[0]["phones"] = ConstantPad1d((0, max_phone_length - len(batch[0]["phones"])), 0
-            )(torch.tensor(batch[0]["phones"]))
+        if not self.expand:
+            if "phones" in self.return_keys:
+                batch[0]["phones"] = ConstantPad1d((0, max_phone_length - len(batch[0]["phones"])), self.pad_value
+                )(torch.tensor(batch[0]["phones"]))
+        else:
+            for i in range(len(batch)):
+                batch[i]["phones"] = self._expand(batch[i]["phones"], batch[i]["phone_durations"])
+            if "phones" in self.return_keys:
+                batch[0]["phones"] = ConstantPad1d((0, max_frame_length - len(batch[0]["phones"])), self.pad_value
+                )(torch.tensor(batch[0]["phones"]))
         if self.measures is not None and "measures" in self.return_keys:
             for measure in self.measures:
                 batch[0]["measures"][measure.name] = ConstantPad1d(
@@ -403,19 +423,19 @@ class SpeechCollator():
                 result["dvector"] = torch.stack(result["dvector"])
                 torch.cuda.empty_cache()
         if "vocex" in self.return_keys and self.vocex_model is not None:
-            result["vocex"] = pad_sequence([x["vocex"] for x in batch], batch_first=True, padding_value=self.pad_value)
+            result["vocex"] = pad_sequence([x["vocex"] for x in batch], batch_first=True, padding_value=0)
         if "audio" in self.return_keys:
-            result["audio"] = pad_sequence([x["audio"] for x in batch], batch_first=True, padding_value=self.pad_value)
+            result["audio"] = pad_sequence([x["audio"] for x in batch], batch_first=True, padding_value=0)
         if "augmented_audio" in self.return_keys:
-            result["augmented_audio"] = pad_sequence([x["augmented_audio"] for x in batch], batch_first=True, padding_value=self.pad_value)
+            result["augmented_audio"] = pad_sequence([x["augmented_audio"] for x in batch], batch_first=True, padding_value=0)
         if "mel" in self.return_keys:
-            result["mel"] = pad_sequence([x["mel"] for x in batch], batch_first=True, padding_value=self.pad_value)
+            result["mel"] = pad_sequence([x["mel"] for x in batch], batch_first=True, padding_value=0)
         if "augmented_mel" in self.return_keys:
-            result["augmented_mel"] = pad_sequence([x["augmented_mel"] for x in batch], batch_first=True, padding_value=self.pad_value)
+            result["augmented_mel"] = pad_sequence([x["augmented_mel"] for x in batch], batch_first=True, padding_value=0)
         if "phone_durations" in self.return_keys:
-            result["phone_durations"] = pad_sequence([x["phone_durations"] for x in batch], batch_first=True, padding_value=self.pad_value)
+            result["phone_durations"] = pad_sequence([x["phone_durations"] for x in batch], batch_first=True, padding_value=0)
         if "durations" in self.return_keys:
-            result["durations"] = pad_sequence([x["durations"] for x in batch], batch_first=True, padding_value=self.pad_value)
+            result["durations"] = pad_sequence([x["durations"] for x in batch], batch_first=True, padding_value=0)
         if "phones" in self.return_keys:
             result["phones"] = pad_sequence([x["phones"] for x in batch], batch_first=True, padding_value=self.pad_value)
         if "speaker" in self.return_keys:
@@ -444,6 +464,9 @@ class SpeechCollator():
 
         if self.use_speaker_prompt:
             result["speaker_prompt_mel"] = prompt_mels
+
+        result["frame_mask"] = result["mel"].sum(dim=-1) != 0
+        result["phone_mask"] = result["phones"] != self.pad_value
 
         return result
 
