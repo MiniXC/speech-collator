@@ -64,6 +64,7 @@ class SpeechCollator():
         speaker_prompt_wave_augmentation_func=None,
         vocex_model=None,
         expand_seq=False,
+        overwrite_cache=False,
     ):
         # download dvector and wav2mel
         local_data_dir = f"{_DATA_DIR}/data"
@@ -145,6 +146,8 @@ class SpeechCollator():
         self.vocex_model = vocex_model
 
         self.expand = expand_seq
+
+        self.overwrite_cache = overwrite_cache
 
     @staticmethod
     def drc(x, C=1, clip_val=1e-7):
@@ -277,7 +280,7 @@ class SpeechCollator():
 
             if self.vocex_model is not None and "vocex" in self.return_keys:
                 vocex_cache_path = audio_path.replace(".wav", "_vocex.npy")
-                if os.path.exists(vocex_cache_path):
+                if os.path.exists(vocex_cache_path) and not self.overwrite_cache:
                     batch[i]["vocex"] = torch.tensor(np.load(vocex_cache_path)).float()
                 else:
                     with torch.no_grad():
