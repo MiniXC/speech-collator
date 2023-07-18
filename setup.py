@@ -9,7 +9,7 @@ setup(
     packages=find_packages(),
     install_requires=[
         "numpy<1.24",
-        "pyworld>=0.3.3",
+        "pyworld>=0.3.2",
         "librosa<0.10",
         "scipy>=1.9.3",
     ],
