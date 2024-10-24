@@ -1,4 +1,4 @@
-from scipy.signal import hamming
+from scipy.signal.windows import hamming
 from srmrpy.hilbert import hilbert
 from srmrpy.modulation_filters import *
 from gammatone.fftweight import fft_gtgram
